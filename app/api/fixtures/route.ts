@@ -3,67 +3,121 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type ApiFixture = {
-  fixture?: { id?: number; date?: string; timestamp?: number; status?: { short?: string; long?: string } };
-  league?: { id?: number; name?: string; country?: string; logo?: string; round?: string };
-  teams?: {
-    home?: { id?: number; name?: string; logo?: string; winner?: boolean | null };
-    away?: { id?: number; name?: string; logo?: string; winner?: boolean | null };
-  };
-  goals?: { home?: number | null; away?: number | null };
+type GoalTeam = { id?: string | number; apiId?: string | number; name?: string; logo?: string | null; image?: string | null };
+type GoalFixture = {
+  id?: string | number;
+  apiId?: string | number;
+  kickoffUtc?: string;
+  matchDate?: string;
+  matchTime?: string;
+  matchStatus?: string;
+  matchPeriod?: string;
+  status?: string | { short?: string; long?: string };
+  homeTeam?: GoalTeam | null;
+  awayTeam?: GoalTeam | null;
+  league?: { id?: string | number; name?: string; country?: string | { name?: string } | null } | null;
+  homeScore?: number | string | null;
+  awayScore?: number | string | null;
+  score?: { home?: number | string | null; away?: number | string | null } | null;
 };
+
+function score(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizedStatus(value: unknown): { short: string; long: string } {
+  const raw = typeof value === "string" ? value.toUpperCase() : "";
+  const status = typeof value === "object" && value !== null
+    ? String((value as { short?: string }).short ?? "").toUpperCase()
+    : raw;
+  const labels: Record<string, { short: string; long: string }> = {
+    NOT_STARTED: { short: "NS", long: "Not started" },
+    SCHEDULED: { short: "NS", long: "Scheduled" },
+    LIVE: { short: "LIVE", long: "Live" },
+    FIRST_HALF: { short: "1H", long: "First half" },
+    HALF_TIME: { short: "HT", long: "Half time" },
+    SECOND_HALF: { short: "2H", long: "Second half" },
+    EXTRA_TIME: { short: "ET", long: "Extra time" },
+    PENALTIES: { short: "P", long: "Penalties" },
+    FINISHED: { short: "FT", long: "Finished" },
+    FULL_TIME: { short: "FT", long: "Full time" },
+    POSTPONED: { short: "PST", long: "Postponed" },
+    CANCELLED: { short: "CANC", long: "Cancelled" },
+    ABANDONED: { short: "ABD", long: "Abandoned" },
+  };
+  if (labels[status]) return labels[status];
+  if (typeof value === "object" && value !== null) {
+    const item = value as { short?: string; long?: string };
+    return { short: item.short ?? "NS", long: item.long ?? "Scheduled" };
+  }
+  return { short: status || "NS", long: status ? status.replaceAll("_", " ") : "Scheduled" };
+}
 
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get("date") ?? new Date().toISOString().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
     return NextResponse.json({ error: "Date must use YYYY-MM-DD format." }, { status: 400 });
   }
-  const key = process.env.API_FOOTBALL_KEY;
+
+  const key = process.env.GOAL_API_KEY;
   if (!key) {
     return NextResponse.json({
       configured: false,
-      provider: "API-Football",
+      provider: "GOAL API",
       fixtures: [],
-      message: "Add API_FOOTBALL_KEY to your local environment or Vercel project settings to load verified fixtures.",
+      message: "Add GOAL_API_KEY to .env.local or your Vercel project settings to load verified fixtures.",
     });
   }
 
-  const base = (process.env.API_FOOTBALL_BASE_URL || "https://v3.football.api-sports.io").replace(/\/$/, "");
   try {
-    const upstream = await fetch(`${base}/fixtures?date=${encodeURIComponent(date)}`, {
-      headers: { "x-apisports-key": key, accept: "application/json" },
+    const upstream = await fetch(`https://api.goal-api.com/v1/fixtures/date/${encodeURIComponent(date)}?limit=100`, {
+      headers: { Authorization: `Bearer ${key}`, accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(12000),
     });
-    const payload = await upstream.json();
+    const payload = await upstream.json().catch(() => null);
+
     if (!upstream.ok) {
-      return NextResponse.json({
-        configured: true,
-        fixtures: [],
-        error: upstream.status === 429 ? "The football data provider rate limit was reached." : "The football data provider returned an error.",
-        providerStatus: upstream.status,
-      }, { status: upstream.status === 429 ? 429 : 502 });
-    }
-    if (payload?.errors && Object.keys(payload.errors).length > 0) {
-      return NextResponse.json({ configured: true, fixtures: [], error: "The provider rejected the request. Check the API key and plan access." }, { status: 502 });
+      const message = upstream.status === 401
+        ? "GOAL API rejected the key. Check that GOAL_API_KEY is correct."
+        : upstream.status === 429
+          ? "GOAL API request quota or rate limit reached. Check your plan and retry later."
+          : "GOAL API returned an error. Check provider status and plan access.";
+      return NextResponse.json({ configured: true, provider: "GOAL API", fixtures: [], error: message, providerStatus: upstream.status }, {
+        status: upstream.status === 429 ? 429 : upstream.status === 400 ? 400 : 502,
+      });
     }
 
-    const fixtures = ((payload?.response ?? []) as ApiFixture[]).map((item) => ({
-      id: item.fixture?.id ?? null,
-      kickoff: item.fixture?.date ?? null,
-      timestamp: item.fixture?.timestamp ?? null,
-      status: item.fixture?.status?.short ?? "NS",
-      statusText: item.fixture?.status?.long ?? "Scheduled",
-      league: item.league?.name ?? "Unknown competition",
-      country: item.league?.country ?? "",
-      leagueId: item.league?.id ?? null,
-      round: item.league?.round ?? null,
-      home: { id: item.teams?.home?.id ?? null, name: item.teams?.home?.name ?? "Home team", logo: item.teams?.home?.logo ?? null },
-      away: { id: item.teams?.away?.id ?? null, name: item.teams?.away?.name ?? "Away team", logo: item.teams?.away?.logo ?? null },
-      goals: { home: item.goals?.home ?? null, away: item.goals?.away ?? null },
-    }));
-    return NextResponse.json({ configured: true, provider: "API-Football", date, count: fixtures.length, fixtures });
+    if (!payload || payload.success === false || !Array.isArray(payload.data)) {
+      return NextResponse.json({ configured: true, provider: "GOAL API", fixtures: [], error: "GOAL API returned an unexpected response format." }, { status: 502 });
+    }
+
+    const fixtures = (payload.data as GoalFixture[]).map((item) => {
+      const status = normalizedStatus(item.matchStatus ?? item.matchPeriod ?? item.status);
+      const country = typeof item.league?.country === "string" ? item.league.country : item.league?.country?.name ?? "";
+      const homeScore = score(item.homeScore ?? item.score?.home);
+      const awayScore = score(item.awayScore ?? item.score?.away);
+      const kickoff = item.kickoffUtc ?? (item.matchDate ? `${item.matchDate}T${item.matchTime ?? "00:00"}:00Z` : null);
+      return {
+        id: item.id ?? item.apiId ?? null,
+        kickoff,
+        timestamp: kickoff ? Math.floor(new Date(kickoff).getTime() / 1000) : null,
+        status: status.short,
+        statusText: status.long,
+        league: item.league?.name ?? "Unknown competition",
+        country,
+        leagueId: item.league?.id ?? null,
+        round: null,
+        home: { id: item.homeTeam?.id ?? item.homeTeam?.apiId ?? null, name: item.homeTeam?.name ?? "Home team", logo: item.homeTeam?.logo ?? item.homeTeam?.image ?? null },
+        away: { id: item.awayTeam?.id ?? item.awayTeam?.apiId ?? null, name: item.awayTeam?.name ?? "Away team", logo: item.awayTeam?.logo ?? item.awayTeam?.image ?? null },
+        goals: { home: homeScore, away: awayScore },
+      };
+    });
+
+    return NextResponse.json({ configured: true, provider: "GOAL API", date, count: fixtures.length, fixtures });
   } catch {
-    return NextResponse.json({ configured: true, fixtures: [], error: "Could not reach the football data provider. Please retry shortly." }, { status: 504 });
+    return NextResponse.json({ configured: true, provider: "GOAL API", fixtures: [], error: "Could not reach GOAL API. Please retry shortly." }, { status: 504 });
   }
 }
