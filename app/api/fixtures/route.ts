@@ -3,56 +3,26 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type GoalTeam = { id?: string | number; apiId?: string | number; name?: string; logo?: string | null; image?: string | null };
-type GoalFixture = {
-  id?: string | number;
-  apiId?: string | number;
-  kickoffUtc?: string;
-  matchDate?: string;
-  matchTime?: string;
-  matchStatus?: string;
-  matchPeriod?: string;
-  status?: string | { short?: string; long?: string };
-  homeTeam?: GoalTeam | null;
-  awayTeam?: GoalTeam | null;
-  league?: { id?: string | number; name?: string; country?: string | { name?: string } | null } | null;
-  homeScore?: number | string | null;
-  awayScore?: number | string | null;
-  score?: { home?: number | string | null; away?: number | string | null } | null;
+type ApiFootballFixture = {
+  fixture?: { id?: number; date?: string; timestamp?: number; status?: { short?: string; long?: string } };
+  league?: { id?: number; name?: string; country?: string; round?: string };
+  teams?: {
+    home?: { id?: number; name?: string; logo?: string | null };
+    away?: { id?: number; name?: string; logo?: string | null };
+  };
+  goals?: { home?: number | null; away?: number | null };
 };
 
-function score(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function normalizedStatus(value: unknown): { short: string; long: string } {
-  const raw = typeof value === "string" ? value.toUpperCase() : "";
-  const status = typeof value === "object" && value !== null
-    ? String((value as { short?: string }).short ?? "").toUpperCase()
-    : raw;
-  const labels: Record<string, { short: string; long: string }> = {
-    NOT_STARTED: { short: "NS", long: "Not started" },
-    SCHEDULED: { short: "NS", long: "Scheduled" },
-    LIVE: { short: "LIVE", long: "Live" },
-    FIRST_HALF: { short: "1H", long: "First half" },
-    HALF_TIME: { short: "HT", long: "Half time" },
-    SECOND_HALF: { short: "2H", long: "Second half" },
-    EXTRA_TIME: { short: "ET", long: "Extra time" },
-    PENALTIES: { short: "P", long: "Penalties" },
-    FINISHED: { short: "FT", long: "Finished" },
-    FULL_TIME: { short: "FT", long: "Full time" },
-    POSTPONED: { short: "PST", long: "Postponed" },
-    CANCELLED: { short: "CANC", long: "Cancelled" },
-    ABANDONED: { short: "ABD", long: "Abandoned" },
+function normalizedStatus(shortValue: unknown, longValue: unknown) {
+  const short = typeof shortValue === "string" ? shortValue.toUpperCase() : "NS";
+  const labels: Record<string, string> = {
+    TBD: "Time to be defined", NS: "Not started", 1H: "First half", HT: "Half time",
+    2H: "Second half", ET: "Extra time", BT: "Break time", P: "Penalties",
+    SUSP: "Suspended", INT: "Interrupted", FT: "Full time", AET: "After extra time",
+    PEN: "After penalties", PST: "Postponed", CANC: "Cancelled", ABD: "Abandoned",
+    AWD: "Technical loss", WO: "Walkover", LIVE: "Live",
   };
-  if (labels[status]) return labels[status];
-  if (typeof value === "object" && value !== null) {
-    const item = value as { short?: string; long?: string };
-    return { short: item.short ?? "NS", long: item.long ?? "Scheduled" };
-  }
-  return { short: status || "NS", long: status ? status.replaceAll("_", " ") : "Scheduled" };
+  return { short, long: typeof longValue === "string" && longValue ? longValue : labels[short] ?? short };
 }
 
 export async function GET(request: NextRequest) {
@@ -61,63 +31,63 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Date must use YYYY-MM-DD format." }, { status: 400 });
   }
 
-  const key = process.env.GOAL_API_KEY;
+  const key = process.env.API_FOOTBALL_KEY;
   if (!key) {
     return NextResponse.json({
       configured: false,
-      provider: "GOAL API",
+      provider: "API-Football",
       fixtures: [],
-      message: "Add GOAL_API_KEY to .env.local or your Vercel project settings to load verified fixtures.",
+      message: "Add API_FOOTBALL_KEY to .env.local or your Vercel project settings to load verified fixtures.",
     });
   }
 
   try {
-    const upstream = await fetch(`https://api.goal-api.com/v1/fixtures/date/${encodeURIComponent(date)}?limit=100`, {
-      headers: { Authorization: `Bearer ${key}`, accept: "application/json" },
+    const upstream = await fetch(`https://v3.football.api-sports.io/fixtures?date=${encodeURIComponent(date)}`, {
+      headers: { "x-apisports-key": key, accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(12000),
     });
     const payload = await upstream.json().catch(() => null);
 
     if (!upstream.ok) {
-      const message = upstream.status === 401
-        ? "GOAL API rejected the key. Check that GOAL_API_KEY is correct."
+      const message = upstream.status === 401 || upstream.status === 403
+        ? "API-Football rejected the key or the account does not have access. Check your API-Sports dashboard."
         : upstream.status === 429
-          ? "GOAL API request quota or rate limit reached. Check your plan and retry later."
-          : "GOAL API returned an error. Check provider status and plan access.";
-      return NextResponse.json({ configured: true, provider: "GOAL API", fixtures: [], error: message, providerStatus: upstream.status }, {
+          ? "API-Football rate limit reached. Check your plan and retry later."
+          : "API-Football returned an error. Check provider status and plan access.";
+      return NextResponse.json({ configured: true, provider: "API-Football", fixtures: [], error: message, providerStatus: upstream.status }, {
         status: upstream.status === 429 ? 429 : upstream.status === 400 ? 400 : 502,
       });
     }
 
-    if (!payload || payload.success === false || !Array.isArray(payload.data)) {
-      return NextResponse.json({ configured: true, provider: "GOAL API", fixtures: [], error: "GOAL API returned an unexpected response format." }, { status: 502 });
+    if (!payload || !Array.isArray(payload.response) || (Array.isArray(payload.errors) && payload.errors.length > 0)) {
+      return NextResponse.json({
+        configured: true, provider: "API-Football", fixtures: [],
+        error: "API-Football returned an unexpected response or API-level error.",
+      }, { status: 502 });
     }
 
-    const fixtures = (payload.data as GoalFixture[]).map((item) => {
-      const status = normalizedStatus(item.matchStatus ?? item.matchPeriod ?? item.status);
-      const country = typeof item.league?.country === "string" ? item.league.country : item.league?.country?.name ?? "";
-      const homeScore = score(item.homeScore ?? item.score?.home);
-      const awayScore = score(item.awayScore ?? item.score?.away);
-      const kickoff = item.kickoffUtc ?? (item.matchDate ? `${item.matchDate}T${item.matchTime ?? "00:00"}:00Z` : null);
+    const fixtures = (payload.response as ApiFootballFixture[]).map((item) => {
+      const status = normalizedStatus(item.fixture?.status?.short, item.fixture?.status?.long);
+      const kickoff = item.fixture?.date ?? null;
       return {
-        id: item.id ?? item.apiId ?? null,
+        id: item.fixture?.id ?? null,
         kickoff,
-        timestamp: kickoff ? Math.floor(new Date(kickoff).getTime() / 1000) : null,
+        timestamp: item.fixture?.timestamp ?? (kickoff ? Math.floor(new Date(kickoff).getTime() / 1000) : null),
         status: status.short,
         statusText: status.long,
         league: item.league?.name ?? "Unknown competition",
-        country,
+        country: item.league?.country ?? "",
         leagueId: item.league?.id ?? null,
-        round: null,
-        home: { id: item.homeTeam?.id ?? item.homeTeam?.apiId ?? null, name: item.homeTeam?.name ?? "Home team", logo: item.homeTeam?.logo ?? item.homeTeam?.image ?? null },
-        away: { id: item.awayTeam?.id ?? item.awayTeam?.apiId ?? null, name: item.awayTeam?.name ?? "Away team", logo: item.awayTeam?.logo ?? item.awayTeam?.image ?? null },
-        goals: { home: homeScore, away: awayScore },
+        round: item.league?.round ?? null,
+        home: { id: item.teams?.home?.id ?? null, name: item.teams?.home?.name ?? "Home team", logo: item.teams?.home?.logo ?? null },
+        away: { id: item.teams?.away?.id ?? null, name: item.teams?.away?.name ?? "Away team", logo: item.teams?.away?.logo ?? null },
+        goals: { home: item.goals?.home ?? null, away: item.goals?.away ?? null },
       };
     });
 
-    return NextResponse.json({ configured: true, provider: "GOAL API", date, count: fixtures.length, fixtures });
+    return NextResponse.json({ configured: true, provider: "API-Football", date, count: fixtures.length, fixtures });
   } catch {
-    return NextResponse.json({ configured: true, provider: "GOAL API", fixtures: [], error: "Could not reach GOAL API. Please retry shortly." }, { status: 504 });
+    return NextResponse.json({ configured: true, provider: "API-Football", fixtures: [], error: "Could not reach API-Football. Please retry shortly." }, { status: 504 });
   }
 }
