@@ -101,9 +101,9 @@ export default function Home() {
           <div className="panel-head"><div><h3>Fixtures & results</h3><p>Live data returned by your configured provider</p></div><button className="secondary-btn" onClick={() => date && void loadFixtures(date)} disabled={loading || !date}><RefreshCw size={12} style={{display:"inline",marginRight:6,verticalAlign:"-2px"}}/>{loading ? "Loading" : "Refresh"}</button></div>
           {leagues.length > 0 && <div style={{padding:"13px 17px 0"}}><label className="form-label" htmlFor="league-filter">FILTER COMPETITION</label><select id="league-filter" className="field" value={league} onChange={(e) => setLeague(e.target.value)}><option value="all">All competitions ({fixtures.length})</option>{leagues.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>}
           {error && <div style={{padding:16}}><div className="error">{error}</div></div>}
-          {loading && <div className="loading">Requesting fixtures from GOAL API…</div>}
-          {!loading && !error && data && !data.configured && <div className="empty"><div className="empty-icon"><Database size={20}/></div><h4>Connect your football data</h4><p>{data.message}</p><p style={{marginTop:12}}>Add <strong>GOAL_API_KEY</strong> to your environment, then refresh this page.</p><a className="primary-btn" style={{display:"inline-block",marginTop:17}} href="https://goal-api.com/" target="_blank" rel="noreferrer">Get API access ↗</a></div>}
-          {!loading && !error && data?.configured && visibleFixtures.length === 0 && <div className="empty"><div className="empty-icon"><CalendarDays size={20}/></div><h4>No fixtures returned</h4><p>GOAL API returned no fixtures for this date and your current plan. This is a real empty result, not a generated fixture list.</p></div>}
+          {loading && <div className="loading">Requesting fixtures from API-Football…</div>}
+          {!loading && !error && data && !data.configured && <div className="empty"><div className="empty-icon"><Database size={20}/></div><h4>Connect your football data</h4><p>{data.message}</p><p style={{marginTop:12}}>Add <strong>API_FOOTBALL_KEY</strong> to your environment, then refresh this page.</p><a className="primary-btn" style={{display:"inline-block",marginTop:17}} href="https://api-football.com/" target="_blank" rel="noreferrer">Get API access ↗</a></div>}
+          {!loading && !error && data?.configured && visibleFixtures.length === 0 && <div className="empty"><div className="empty-icon"><CalendarDays size={20}/></div><h4>No fixtures returned</h4><p>API-Football returned no fixtures for this date and your current plan. This is a real empty result, not a generated fixture list.</p></div>}
           {!loading && !error && visibleFixtures.length > 0 && <div className="fixture-list">{visibleFixtures.map((fixture, i) => <FixtureRow key={fixture.id ?? `${fixture.home.name}-${i}`} fixture={fixture}/>)}</div>}
           {!data && !loading && !error && <div className="empty"><div className="empty-icon"><CalendarDays size={20}/></div><h4>Choose a matchday</h4><p>Fixture results will appear here after the data provider is configured.</p></div>}
         </section>
@@ -139,7 +139,7 @@ export default function Home() {
           </section>
         </div>
       </div>
-      <footer className="footer"><div><strong>PITCH INTELLIGENCE</strong><br/>Football, quantified. Built to measure uncertainty honestly.</div><div>Data: GOAL API, when configured.<br/>Probabilities are estimates, never guarantees.</div></footer>
+      <footer className="footer"><div><strong>PITCH INTELLIGENCE</strong><br/>Football, quantified. Built to measure uncertainty honestly.</div><div>Data: API-Football, when configured.<br/>Probabilities are estimates, never guarantees.</div></footer>
     </section>
   </main>;
 }
