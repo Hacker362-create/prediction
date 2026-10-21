@@ -16,8 +16,8 @@ type ApiFootballFixture = {
 function normalizedStatus(shortValue: unknown, longValue: unknown) {
   const short = typeof shortValue === "string" ? shortValue.toUpperCase() : "NS";
   const labels: Record<string, string> = {
-    TBD: "Time to be defined", NS: "Not started", 1H: "First half", HT: "Half time",
-    2H: "Second half", ET: "Extra time", BT: "Break time", P: "Penalties",
+    TBD: "Time to be defined", NS: "Not started", "1H": "First half", HT: "Half time",
+    "2H": "Second half", ET: "Extra time", BT: "Break time", P: "Penalties",
     SUSP: "Suspended", INT: "Interrupted", FT: "Full time", AET: "After extra time",
     PEN: "After penalties", PST: "Postponed", CANC: "Cancelled", ABD: "Abandoned",
     AWD: "Technical loss", WO: "Walkover", LIVE: "Live",
