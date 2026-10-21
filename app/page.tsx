@@ -5,10 +5,10 @@ import { Activity, CalendarDays, CircleHelp, Database, RefreshCw, ShieldCheck, T
 import { probabilitiesFromExpectedGoals, type OutcomeProbabilities } from "@/lib/predictions";
 
 type Fixture = {
-  id: number | null; kickoff: string | null; timestamp: number | null; status: string; statusText: string;
-  league: string; country: string; leagueId: number | null; round: string | null;
-  home: { id: number | null; name: string; logo: string | null };
-  away: { id: number | null; name: string; logo: string | null };
+  id: number | string | null; kickoff: string | null; timestamp: number | null; status: string; statusText: string;
+  league: string; country: string; leagueId: number | string | null; round: string | null;
+  home: { id: number | string | null; name: string; logo: string | null };
+  away: { id: number | string | null; name: string; logo: string | null };
   goals: { home: number | null; away: number | null };
 };
 type FixturesResponse = { configured: boolean; provider?: string; date?: string; count?: number; fixtures: Fixture[]; message?: string; error?: string };
@@ -19,9 +19,9 @@ function localDate() {
 }
 function clock(value: string | null) {
   if (!value) return "Time TBC";
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(value));
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
-function Crest({ name, logo, side }: { name: string; logo: string | null; side?: "away" }) {
+function Crest({ name, logo }: { name: string; logo: string | null }) {
   return logo ? <img className="crest" src={logo} alt="" loading="lazy" /> : <span className="crest-fallback">{name.slice(0, 2).toUpperCase()}</span>;
 }
 function FixtureRow({ fixture }: { fixture: Fixture }) {
@@ -36,7 +36,7 @@ function FixtureRow({ fixture }: { fixture: Fixture }) {
         {scoreExists ? <div className="score">{fixture.goals.home} – {fixture.goals.away}</div> : <div className="kickoff">{clock(fixture.kickoff)}</div>}
         <span className="match-status" style={{ color: live ? "#f3c66b" : finished ? "#8c9a90" : "#c3f36b" }}>{live ? "● LIVE" : finished ? "FULL TIME" : fixture.statusText.toUpperCase()}</span>
       </div>
-      <div className="team away"><span className="team-name">{fixture.away.name}</span><Crest name={fixture.away.name} logo={fixture.away.logo} side="away"/></div>
+      <div className="team away"><span className="team-name">{fixture.away.name}</span><Crest name={fixture.away.name} logo={fixture.away.logo}/></div>
     </div>
   </article>;
 }
@@ -101,9 +101,9 @@ export default function Home() {
           <div className="panel-head"><div><h3>Fixtures & results</h3><p>Live data returned by your configured provider</p></div><button className="secondary-btn" onClick={() => date && void loadFixtures(date)} disabled={loading || !date}><RefreshCw size={12} style={{display:"inline",marginRight:6,verticalAlign:"-2px"}}/>{loading ? "Loading" : "Refresh"}</button></div>
           {leagues.length > 0 && <div style={{padding:"13px 17px 0"}}><label className="form-label" htmlFor="league-filter">FILTER COMPETITION</label><select id="league-filter" className="field" value={league} onChange={(e) => setLeague(e.target.value)}><option value="all">All competitions ({fixtures.length})</option>{leagues.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>}
           {error && <div style={{padding:16}}><div className="error">{error}</div></div>}
-          {loading && <div className="loading">Requesting fixtures from the football data provider…</div>}
-          {!loading && !error && data && !data.configured && <div className="empty"><div className="empty-icon"><Database size={20}/></div><h4>Connect your football data</h4><p>{data.message}</p><p style={{marginTop:12}}>Add <strong>API_FOOTBALL_KEY</strong> to your environment, then refresh this page.</p><a className="primary-btn" style={{display:"inline-block",marginTop:17}} href="https://www.api-football.com/" target="_blank" rel="noreferrer">Get API access ↗</a></div>}
-          {!loading && !error && data?.configured && visibleFixtures.length === 0 && <div className="empty"><div className="empty-icon"><CalendarDays size={20}/></div><h4>No fixtures returned</h4><p>The provider returned no fixtures for this date and your current plan. This is a real empty result, not a generated fixture list.</p></div>}
+          {loading && <div className="loading">Requesting fixtures from GOAL API…</div>}
+          {!loading && !error && data && !data.configured && <div className="empty"><div className="empty-icon"><Database size={20}/></div><h4>Connect your football data</h4><p>{data.message}</p><p style={{marginTop:12}}>Add <strong>GOAL_API_KEY</strong> to your environment, then refresh this page.</p><a className="primary-btn" style={{display:"inline-block",marginTop:17}} href="https://goal-api.com/" target="_blank" rel="noreferrer">Get API access ↗</a></div>}
+          {!loading && !error && data?.configured && visibleFixtures.length === 0 && <div className="empty"><div className="empty-icon"><CalendarDays size={20}/></div><h4>No fixtures returned</h4><p>GOAL API returned no fixtures for this date and your current plan. This is a real empty result, not a generated fixture list.</p></div>}
           {!loading && !error && visibleFixtures.length > 0 && <div className="fixture-list">{visibleFixtures.map((fixture, i) => <FixtureRow key={fixture.id ?? `${fixture.home.name}-${i}`} fixture={fixture}/>)}</div>}
           {!data && !loading && !error && <div className="empty"><div className="empty-icon"><CalendarDays size={20}/></div><h4>Choose a matchday</h4><p>Fixture results will appear here after the data provider is configured.</p></div>}
         </section>
@@ -139,7 +139,7 @@ export default function Home() {
           </section>
         </div>
       </div>
-      <footer className="footer"><div><strong>PITCH INTELLIGENCE</strong><br/>Football, quantified. Built to measure uncertainty honestly.</div><div>Data: API-Football, when configured.<br/>Probabilities are estimates, never guarantees.</div></footer>
+      <footer className="footer"><div><strong>PITCH INTELLIGENCE</strong><br/>Football, quantified. Built to measure uncertainty honestly.</div><div>Data: GOAL API, when configured.<br/>Probabilities are estimates, never guarantees.</div></footer>
     </section>
   </main>;
 }
